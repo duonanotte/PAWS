@@ -427,7 +427,8 @@ class Tapper:
         session = cloudscraper.create_scraper()
         connection_manager.add(http_client)
 
-        await self.check_proxy(http_client)
+        if settings.USE_PROXY:
+            await self.check_proxy(http_client)
 
         token_live_time = randint(3500, 3600)
         while True:
@@ -560,9 +561,9 @@ class Tapper:
                 await asyncio.sleep(sleep_time)
 
 
-async def run_tapper(tg_client: Client, proxy: str):
+async def run_tapper(tg_client: Client, proxy: str | None):
     session_name = tg_client.name
-    if not proxy:
+    if settings.USE_PROXY and not proxy:
         logger.error(f"{session_name} | No proxy found for this session")
         return
     try:
