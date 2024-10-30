@@ -10,3 +10,4 @@ rich==13.9.2
 colorama==.0.4.6
 tgcrypto==1.2.5
 cloudscraper==1.2.71
+aiocfscrape==1.0.0
