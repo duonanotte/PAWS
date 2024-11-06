@@ -44,9 +44,10 @@ If you have any questions or need assistance, feel free to join our **community 
 | **API_ID / API_HASH**       | <small>Telegram platform credentials for starting the session</small>                 |
 | **USE_RANDOM_DELAY_IN_RUN** | <small>Run the session with a random delay `True`, without delay `False`</small>      |
 | **RANDOM_DELAY_IN_RUN**     | <small>Random delay in the range `[0, 36000]`</small>                                 | |
-| **REF_ID**                  | <small>Your referral link in the format `'wBuWS75s'`</small>                      |
+| **REF_ID**                  | <small>Your referral link in the format `'wBuWS75s'`</small>                          |
+| **JOIN_TG_CHANNELS**        | <small>`True` or `False` Be careful! You can get banned for joining channels!</small> |
+| **MUTE_AND_ARCHIVE_TG_CHANNELS** | <small>`True` or `False`</small>                                                 |
 | **AUTO_TASK**               | <small>`True` or `False`</small>                                                      |
-| **DISABLED_TASKS**          | <small>Disabled tasks in format ['invite', 'wallet']</small>                          |
 | **SLEEP_TIME**              | <small>Time each session sleeps after completing all actions `[21000, 32000]`</small> |
 | **USE_PROXY**               | <small>`True` or `False`(default `False`)</small>                                     |
 
