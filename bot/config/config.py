@@ -8,15 +8,16 @@ class Settings(BaseSettings):
     API_HASH: str
 
     USE_RANDOM_DELAY_IN_RUN: bool = False
-    RANDOM_DELAY_IN_RUN: list[int] = [0, 49800]
+    RANDOM_DELAY_IN_RUN: list[int] = [0, 600]
 
     REF_ID: str = 'wBuWS75s'
 
+    JOIN_TG_CHANNELS: bool = True
+    MUTE_AND_ARCHIVE_TG_CHANNELS: bool = True
+
     AUTO_TASK: bool = True
-    DISABLED_TASKS: list[str] = ['invite', 'wallet']
 
     SLEEP_TIME: list[int] = [37200, 67800]
-    USE_PROXY: bool = True
-
+    USE_PROXY: bool = False
 
 settings = Settings()
