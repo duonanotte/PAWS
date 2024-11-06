@@ -3,19 +3,22 @@ import os
 import json
 import aiofiles
 import random
-import brotli
+
 import aiohttp
 import traceback
 import cloudscraper
+import re
 
 from aiocfscrape import CloudflareScraper
 from time import time
 from urllib.parse import unquote, quote
-from random import randint, choices, uniform
+from random import randint
 from aiohttp_proxy import ProxyConnector
 from better_proxy import Proxy
 from pyrogram import Client
-from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered, FloodWait
+from pyrogram.errors import (Unauthorized, UserDeactivated, AuthKeyUnregistered, BadRequest, UsernameInvalid, UsernameNotOccupied,
+                             PeerIdInvalid, UserNotParticipant, InviteHashExpired, InviteHashInvalid, FloodWait, ChannelPrivate)
+from pyrogram import raw
 from pyrogram.raw import types
 from pyrogram.raw.functions.messages import RequestAppWebView
 from typing import Tuple
@@ -144,6 +147,14 @@ class Tapper:
             logger.error(f"{self.session_name} | Proxy error: {error}")
             return False
 
+    def check_error(self, error, message):
+        try:
+            error_message = str(error)
+            is_equal = re.search(message, error_message)
+            return is_equal
+        except Exception as e:
+            return False
+
     async def get_tg_web_data(self) -> str:
         if self.proxy:
             proxy = Proxy.from_str(self.proxy)
@@ -255,7 +266,6 @@ class Tapper:
                 res = tasks.json()
                 if res.get('success', False):
                     data = res['data']
-                    logger.info(f"{self.session_name} | Getting list of tasks... | Found {len(data)} tasks")
                     return data
                 else:
                     logger.warning(f"{self.session_name} | Failed to get tasks: API returned success=false")
@@ -300,7 +310,7 @@ class Tapper:
                 res = claim_response.json()
                 if res.get('success', False):
                     reward_amount = task['rewards'][0]['amount'] if task['rewards'] else 0
-                    # logger.success(
+                    # logger.info(
                     #     f"{self.session_name} | Successfully completed task: {task_title} | Earned {reward_amount} PAWS")
                     return True
                 else:
@@ -326,66 +336,64 @@ class Tapper:
             task_reward = task['rewards'][0]['amount'] if task['rewards'] else 0
             task_progress = task.get('progress', {})
 
-            # Skip already claimed tasks
             if task_progress.get('claimed', False):
-                # logger.info(f"{self.session_name} | Task '{task_title}' already completed")
                 continue
 
-            # Check referral task requirements
-            if task_code == "invite" and ref_counts < 10:
-                # logger.info(f"{self.session_name} | Task '{task_title}' skipped - insufficient referrals")
+            if task_code == "invite" and ref_counts >= 10:
+                success = await self.claim_task(task, session)
+                if success:
+                    logger.info(
+                        f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
+                        f"Earned <ly>{task_reward}</ly> PAWS"
+                    )
+                else:
+                    logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
+                await asyncio.sleep(randint(2, 5))
                 continue
 
-            # Skip disabled tasks
-            if task_code in settings.DISABLED_TASKS:
-                # logger.info(f"{self.session_name} | Task '{task_title}' skipped - in disabled list")
+            if task_code in {"twitter", "paragraph", "linked"}:
+                success = await self.claim_task(task, session)
+                if success:
+                    logger.info(
+                        f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
+                        f"Earned <ly>{task_reward}</ly> PAWS"
+                    )
+                else:
+                    logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
+                await asyncio.sleep(randint(2, 5))
                 continue
 
-            # Handle Telegram tasks
-            if task_code == "telegram":
-                # logger.info(f"{self.session_name} | Task '{task_title}' requires session mode for channel joining")
+
+            if task_code == "telegram" or task_code == "blum":
+                channel_url = task.get('channel', '')
+                await self.join_telegram_channel(channel_url, task_code)
+                success = await self.claim_task(task, session)
+                if success:
+                    logger.info(
+                        f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
+                        f"Earned <ly>{task_reward}</ly> PAWS"
+                    )
+                else:
+                    logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
+                await asyncio.sleep(randint(2, 5))
                 continue
 
-            # Handle Twitter/Social tasks
-            if task_code == "twitter" or task_type == "social":
-                # logger.info(f"{self.session_name} | Processing social task: {task_title}")
+            if task_code == "emojiName":
+                await self.add_emoji_if_missing()
+                success = await self.claim_task(task, session)
+                await asyncio.sleep(randint(2, 6))
+                if success:
+                    logger.info(
+                        f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
+                        f"Earned <ly>{task_reward}</ly> PAWS"
+                    )
+                    await self.delete_all_emoji()
+                else:
+                    logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
+                await asyncio.sleep(randint(2, 5))
+                continue
 
-                if task.get('action') == "link" and task.get('data'):
-                    # Log the task details
-                    # logger.info(
-                    #     f"{self.session_name} | Executing task: '{task_title}' | "
-                    #     f"Type: {task_type} | "
-                    #     f"Reward: {task_reward} PAWS"
-                    # )
-
-                    # Add delay to simulate human behavior
-                    await asyncio.sleep(random.uniform(5, 10))
-
-                    # Try to claim the task
-                    success = await self.claim_task(task, session)
-
-                    if success:
-                        logger.success(
-                            f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
-                            f"Earned <ly>{task_reward}</ly> PAWS"
-                        )
-                    else:
-                        logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
-
-                    continue
-
-            success = await self.claim_task(task, session)
-
-            if success:
-                logger.success(
-                    f"{self.session_name} | Task <cyan>'{task_title}'</cyan> completed successfully | "
-                    f"Earned <ly>{task_reward}</ly> PAWS"
-                )
-            else:
-                logger.warning(f"{self.session_name} | Failed to complete task '{task_title}'")
-
-            # Add random delay between tasks
-            await asyncio.sleep(random.uniform(5, 10))
+            await asyncio.sleep(randint(3, 9))
 
     async def get_leaderboard_position(self, session: cloudscraper.CloudScraper) -> int:
         try:
@@ -403,6 +411,157 @@ class Tapper:
         except Exception as e:
             logger.error(f"{self.session_name} | Error while getting leaderboard position: {e}")
         return 0
+
+    async def join_telegram_channel(self, channel_url: str, task_code: str) -> bool:
+        channel_username = None
+        if not settings.JOIN_TG_CHANNELS:
+            return False
+
+        was_connected = self.tg_client.is_connected
+
+        try:
+            if task_code == 'blum':
+                channel_username = 'blumcrypto'
+            elif task_code == 'telegram':
+                channel_username = 'pawsupfam'
+            else:
+                channel_username = channel_url.split('/')[-1].strip()
+
+            if not channel_username:
+                logger.error(f"{self.session_name} | Invalid channel link: <light-yellow>{channel_url}</light-yellow>")
+                return False
+
+            if not was_connected:
+                await asyncio.sleep(delay=random.randint(3, 6))
+                await self.tg_client.connect()
+                await asyncio.sleep(delay=random.randint(4, 8))
+
+            try:
+                channel = await self.tg_client.get_chat(channel_username)
+                await asyncio.sleep(delay=random.randint(3, 6))
+            except Exception as e:
+                return False
+
+            try:
+                member = await self.tg_client.get_chat_member(channel.id, "me")
+                if member and member.status not in ["left", "banned", "restricted"]:
+                    logger.info(f"{self.session_name} | Already subscribed to channel <cyan>{channel.title}</cyan>")
+                    await asyncio.sleep(delay=random.randint(3, 6))
+                    if settings.MUTE_AND_ARCHIVE_TG_CHANNELS:
+                        await self._mute_and_archive_channel(channel)
+                        await asyncio.sleep(delay=random.randint(3, 6))
+                    return True
+            except Exception as e:
+                if not self.check_error(e, 'USER_NOT_PARTICIPANT'):
+                    return False
+
+            await self.tg_client.join_chat(channel_username)
+            await asyncio.sleep(delay=random.randint(4, 8))
+            logger.info(f"{self.session_name} | Successfully subscribed to channel <cyan>{channel.title}</cyan>")
+            if settings.MUTE_AND_ARCHIVE_TG_CHANNELS:
+                await self._mute_and_archive_channel(channel)
+                await asyncio.sleep(delay=random.randint(3, 6))
+            return True
+
+        except Exception as e:
+            logger.error(f"{self.session_name} | Unexpected error while processing channel {channel_username}: {str(e)}")
+            return False
+        finally:
+            if not was_connected and self.tg_client.is_connected:
+                await asyncio.sleep(delay=random.randint(4, 8))
+                await self.tg_client.disconnect()
+
+    async def _mute_and_archive_channel(self, channel) -> None:
+        try:
+            await self.tg_client.invoke(
+                raw.functions.account.UpdateNotifySettings(
+                    peer=raw.types.InputNotifyPeer(
+                        peer=await self.tg_client.resolve_peer(channel.id)
+                    ),
+                    settings=raw.types.InputPeerNotifySettings(
+                        mute_until=2147483647
+                    )
+                )
+            )
+            logger.info(f"{self.session_name} | Notifications muted for channel <cyan>{channel.title}</cyan>")
+        except Exception as e:
+            logger.warning(f"{self.session_name} | Failed to mute notifications: <light-yellow>{str(e)}</light-yellow>")
+
+        try:
+            await self.tg_client.invoke(
+                raw.functions.folders.EditPeerFolders(
+                    folder_peers=[
+                        raw.types.InputFolderPeer(
+                            peer=await self.tg_client.resolve_peer(channel.id),
+                            folder_id=1
+                        )
+                    ]
+                )
+            )
+            logger.info(f"{self.session_name} | Channel <cyan>{channel.title}</cyan> added to archive")
+        except Exception as e:
+            logger.warning(f"{self.session_name} | Failed to add to archive: <light-yellow>{str(e)}</light-yellow>")
+
+    async def add_emoji_if_missing(self):
+        emoji_to_add = "🐾"
+        try:
+            if not self.tg_client.is_connected:
+                await self.tg_client.connect()
+
+            me = await self.tg_client.get_me()
+            first_name = me.first_name or ""
+            last_name = me.last_name or ""
+
+            if emoji_to_add not in first_name and emoji_to_add not in last_name:
+                new_last_name = last_name + emoji_to_add if last_name else emoji_to_add
+                await self.tg_client.update_profile(last_name=new_last_name)
+                logger.info(
+                    f"{self.session_name} | Added emoji {emoji_to_add} to last name | New last name: <ly>{new_last_name}</ly>")
+            else:
+                logger.info(f"{self.session_name} | Emoji {emoji_to_add} already present in name or last name")
+        except Exception as e:
+            logger.error(f"{self.session_name} | Error checking/updating profile: {e}")
+
+    async def delete_all_emoji(self):
+        try:
+            me = await self.tg_client.get_me()
+            first_name = me.first_name or ""
+            last_name = me.last_name or ""
+
+            emoji_pattern = re.compile("["
+                                       u"\U0001F600-\U0001F64F"
+                                       u"\U0001F300-\U0001F5FF"
+                                       u"\U0001F680-\U0001F6FF"
+                                       u"\U0001F1E0-\U0001F1FF"
+                                       u"\U00002702-\U000027B0"
+                                       u"\U000024C2-\U0001F251"
+                                       "]+", flags=re.UNICODE)
+
+            clean_first_name = emoji_pattern.sub(r'', first_name).strip()
+            clean_last_name = emoji_pattern.sub(r'', last_name).strip()
+
+            if clean_first_name != first_name or clean_last_name != last_name:
+                try:
+                    await self.tg_client.update_profile(
+                        first_name=clean_first_name if clean_first_name else "User",
+                        last_name=clean_last_name
+                    )
+                    logger.info(
+                        f"{self.session_name} | Successfully removed emoji from profile | "
+                        f"New name: <ly>{clean_first_name} {clean_last_name}</ly>"
+                    )
+                except FloodWait as e:
+                    logger.warning(
+                        f"{self.session_name} | FloodWait on profile update. "
+                        f"Sleep {e.value} seconds"
+                    )
+                    await asyncio.sleep(e.value)
+            else:
+                logger.info(f"{self.session_name} | No emoji found in profile")
+
+        except Exception as e:
+            logger.error(f"{self.session_name} | Error when deleting an emoji: {e}")
+            logger.error(f"Traceback: ", exc_info=True)
 
     async def run(self) -> None:
         if settings.USE_RANDOM_DELAY_IN_RUN:
