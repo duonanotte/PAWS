@@ -3,6 +3,7 @@ import glob
 import asyncio
 import argparse
 import json
+import sys
 
 from pyrogram import Client
 from bot.config import settings
@@ -13,9 +14,30 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.markdown import Markdown
+from rich.text import Text
 from bot.utils.banner import banner
 from bot.utils.documentation import get_documentation
 global tg_clients
+
+def suppress_errors():
+    sys.stderr = open(os.devnull, 'w')
+
+async def display_welcome_messages():
+    console = Console()
+
+    warning_panel = Panel(
+        Markdown(
+            "> ⚠️  **WARNING**:\n"
+            "> - PLEASE READ THE DOCUMENTATION BEFORE USING THE SCRIPT!\n"
+            "> - Use unique proxies for each session\n"
+            "> - Do not abuse the script to avoid blockages\n"
+            "> - Exercise caution and follow usage guidelines"
+        ),
+        border_style="magenta",
+        padding=(1, 2)
+    )
+    console.print(warning_panel)
+    await asyncio.sleep(3)
 
 async def smooth_progress(description, total_steps=100, duration=5):
     with Progress(
@@ -36,11 +58,18 @@ async def smooth_progress(description, total_steps=100, duration=5):
 def display_menu(choices, session_count, proxy_count):
     console = Console()
 
+    proxy_info = f"[green]{proxy_count}[/green] proxies"
+    if not settings.USE_PROXY:
+        proxy_info += " [yellow](You're not using proxies! Be careful!)[/yellow]"
+
     menu_text = "\n".join([f"[green][{i}][/green] {choice}" for i, choice in enumerate(choices, 1)])
 
     panel_content = (
-        f"🛡️  Detected [white]{session_count}[/white] sessions and [white]{proxy_count}[/white] proxies\n\n"
-        f"{menu_text}"
+        f"🛡️  Detected [green]{session_count}[/green] sessions and {proxy_info}\n\n"
+        f"{menu_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "[bold white]👨 Author:[/bold white] [bold white]duonanotte[/bold white]\n"
+        "[bold white]💬 Join our community:[/bold white] [bold blue underline]https://t.me/web3community_ru[/bold blue underline]"
     )
 
     panel = Panel(
@@ -109,6 +138,7 @@ def display_documentation(language='ru'):
     md = Markdown(instructions)
     console.print(Panel(md, title=title, border_style="green", expand=False))
 
+
 async def process() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--action", type=int, help="Action to perform")
@@ -139,6 +169,7 @@ async def process() -> None:
 
             action = int(choice)
 
+        # Остальной код функции process() остается без изменений
         if action == 1:
             await smooth_progress("Starting the bot...", total_steps=100, duration=2)
             tg_clients = await get_tg_clients()
