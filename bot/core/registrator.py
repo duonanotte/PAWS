@@ -1,60 +1,101 @@
+import asyncio
+import json
+import os
+from urllib.parse import urlparse
 from pyrogram import Client
-
 from bot.config import settings
-from bot.core.agents import generate_random_user_agent
 from bot.utils import logger
-from bot.utils.file_manager import save_to_json
+
+PROXY_FILE_PATH = 'bot/config/proxies/session_proxy.json'
+
+def parse_proxy_string(proxy_string):
+    if not proxy_string:
+        return None
+
+    try:
+        parsed = urlparse(proxy_string)
+        scheme = parsed.scheme
+        username = parsed.username
+        password = parsed.password
+        hostname = parsed.hostname
+        port = parsed.port
+
+        if not all([scheme, hostname, port]):
+            raise ValueError("Invalid proxy string format")
+
+        return {
+            "scheme": scheme,
+            "hostname": hostname,
+            "port": port,
+            "username": username,
+            "password": password
+        }
+    except Exception as e:
+        logger.error(f"Error parsing proxy string: {e}")
+        return None
+
+
+def get_proxy_input():
+    proxy_string = input(
+        'Enter proxy string (e.g., http://login:password@ip:port or press Enter to skip: ')
+    return proxy_string, parse_proxy_string(proxy_string)
+
+
+def save_session_proxy(session_name, proxy_string):
+    try:
+        if os.path.exists(PROXY_FILE_PATH):
+            with open(PROXY_FILE_PATH, 'r') as f:
+                proxies = json.load(f)
+        else:
+            proxies = {}
+
+        proxies[session_name] = proxy_string
+
+        with open(PROXY_FILE_PATH, 'w') as f:
+            json.dump(proxies, f, indent=4)
+
+        logger.success(f"Session '{session_name}' and its proxy have been saved to {PROXY_FILE_PATH}")
+    except Exception as e:
+        logger.error(f"Error saving session proxy: {e}")
 
 
 async def register_sessions() -> None:
-    API_ID = settings.API_ID
-    API_HASH = settings.API_HASH
+    try:
+        API_ID = settings.API_ID
+        API_HASH = settings.API_HASH
 
-    if not API_ID or not API_HASH:
-        raise ValueError("API_ID and API_HASH not found in the .env file.")
+        if not API_ID or not API_HASH:
+            raise ValueError("API_ID and API_HASH not found in the .env file.")
 
-    session_name = input('\nEnter the session name (press Enter to exit): ')
+        while True:
+            session_name = input('\nEnter the session name (press Enter to exit): ').strip()
 
-    if not session_name:
-        return None
+            if not session_name:
+                break
 
-    raw_proxy = input("Input the proxy in the format type://user:pass:ip:port (press Enter to use without proxy): ")
-    session = await get_tg_client(session_name=session_name, proxy=raw_proxy)
-    async with session:
-        user_data = await session.get_me()
+            proxy_string, proxy = get_proxy_input()
 
-    user_agent = generate_random_user_agent(device_type='android', browser_type='chrome')
-    save_to_json(f'sessions/accounts.json',
-                 dict_={
-                    "session_name": session_name,
-                    "user_agent": user_agent,
-                    "proxy": raw_proxy if raw_proxy else None
-                 })
-    logger.success(f'Session added successfully @{user_data.username} | {user_data.first_name} {user_data.last_name}')
+            async with Client(
+                    name=session_name,
+                    api_id=API_ID,
+                    api_hash=API_HASH,
+                    workdir="sessions/",
+                    proxy=proxy
+            ) as session:
+                user_data = await session.get_me()
+
+            logger.success(
+                f'Session added successfully <ly>@{user_data.username}</ly> | {user_data.first_name} {user_data.last_name}')
+
+            if proxy:
+                logger.info(f"Proxy used: {proxy['scheme']}://{proxy['hostname']}:{proxy['port']}")
+
+            if proxy_string:
+                save_session_proxy(session_name, proxy_string)
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
 
 
-async def get_tg_client(session_name: str, proxy: str | None) -> Client:
-    if not session_name:
-        raise FileNotFoundError(f"Not found session {session_name}")
-
-    if not settings.API_ID or not settings.API_HASH:
-        raise ValueError("API_ID and API_HASH not found in the .env file.")
-
-    proxy_dict = {
-        "scheme": proxy.split(":")[0],
-        "username": proxy.split(":")[1].split("//")[1],
-        "password": proxy.split(":")[2],
-        "hostname": proxy.split(":")[3],
-        "port": int(proxy.split(":")[4])
-    } if proxy else None
-
-    tg_client = Client(
-        name=session_name,
-        api_id=settings.API_ID,
-        api_hash=settings.API_HASH,
-        workdir="sessions/",
-        plugins=dict(root="bot/plugins"),
-        proxy=proxy_dict
-    )
-
-    return tg_client
+if __name__ == "__main__":
+    asyncio.run(register_sessions())
