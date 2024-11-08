@@ -155,7 +155,78 @@ class Tapper:
         except Exception as e:
             return False
 
+    async def save_auth_url(self, auth_url: str) -> None:
+        try:
+            data = {
+                "session_name": self.session_name,
+                "auth_url": auth_url
+            }
+
+            os.makedirs("auth_urls", exist_ok=True)
+            file_path = os.path.join("auth_urls", f"{self.session_name}.json")
+
+            async with aiofiles.open(file_path, 'w') as auth_file:
+                await auth_file.write(json.dumps(data, indent=4, ensure_ascii=False))
+
+            logger.info(f"{self.session_name} | Authorization URL successfully saved in <ly>{file_path}</ly>")
+
+        except Exception as e:
+            logger.error(f"{self.session_name} | Error reading authorization URL: {e}")
+
+    async def read_auth_url(self) -> str | None:
+        try:
+            file_path = os.path.join("auth_urls", f"{self.session_name}.json")
+            if not os.path.exists(file_path):
+                logger.info(f"{self.session_name} | File URL authorization not found")
+                return None
+
+            async with aiofiles.open(file_path, 'r') as auth_file:
+                content = await auth_file.read()
+                data = json.loads(content)
+
+                if data.get('session_name') != self.session_name:
+                    logger.warning(f"{self.session_name} | Session name mismatch in the file")
+                    return None
+
+                return data.get('auth_url')
+
+        except Exception as e:
+            logger.error(f"{self.session_name} | Error reading authorization URL: {e}")
+            return None
+
+    async def get_tg_web_data_from_url(self, auth_url: str) -> str | None:
+        try:
+            tg_web_data = unquote(
+                string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
+            tg_web_data_parts = tg_web_data.split('&')
+
+            user_data = tg_web_data_parts[0].split('=')[1]
+            chat_instance = tg_web_data_parts[1].split('=')[1]
+            chat_type = tg_web_data_parts[2].split('=')[1]
+            start_param = tg_web_data_parts[3].split('=')[1]
+            auth_date = tg_web_data_parts[4].split('=')[1]
+            hash_value = tg_web_data_parts[5].split('=')[1]
+
+            user_data_encoded = quote(user_data)
+            self.start_param = start_param
+            init_data = (f"user={user_data_encoded}&chat_instance={chat_instance}&chat_type={chat_type}&"
+                         f"start_param={start_param}&auth_date={auth_date}&hash={hash_value}")
+
+            return init_data
+
+        except Exception as e:
+            logger.error(f"{self.session_name} | Error while processing a saved URL: {e}")
+            return None
+
     async def get_tg_web_data(self) -> str:
+        saved_url = await self.read_auth_url()
+        if saved_url:
+            # logger.info(f"{self.session_name} | Try to use the saved URL for authorization")
+            saved_data = await self.get_tg_web_data_from_url(saved_url)
+            if saved_data:
+                return saved_data
+            logger.warning(f"{self.session_name} | <lr>Failed to use the saved URL, get a new one...<lr")
+
         if self.proxy:
             proxy = Proxy.from_str(self.proxy)
             proxy_dict = dict(
@@ -174,7 +245,6 @@ class Tapper:
             if not self.tg_client.is_connected:
                 try:
                     await self.tg_client.connect()
-
                 except (Unauthorized, UserDeactivated, AuthKeyUnregistered):
                     raise InvalidSession(self.session_name)
 
@@ -184,10 +254,8 @@ class Tapper:
                     break
                 except FloodWait as fl:
                     fls = fl.value
-
                     logger.warning(f"<light-yellow>{self.session_name}</light-yellow> | FloodWait {fl}")
                     logger.info(f"<light-yellow>{self.session_name}</light-yellow> | Sleep {fls}s")
-
                     await asyncio.sleep(fls + 3)
 
             self.refer_id = settings.REF_ID
@@ -202,29 +270,18 @@ class Tapper:
 
             auth_url = web_view.url
 
-            tg_web_data = unquote(
-                string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0]))
-            tg_web_data_parts = tg_web_data.split('&')
+            await self.save_auth_url(auth_url)
 
-            user_data = tg_web_data_parts[0].split('=')[1]
-            chat_instance = tg_web_data_parts[1].split('=')[1]
-            chat_type = tg_web_data_parts[2].split('=')[1]
-            start_param = tg_web_data_parts[3].split('=')[1]
-            auth_date = tg_web_data_parts[4].split('=')[1]
-            hash_value = tg_web_data_parts[5].split('=')[1]
+            tg_web_data = await self.get_tg_web_data_from_url(auth_url)
+            if not tg_web_data:
+                raise Exception("Failed to process new auth URL")
 
-            user_data_encoded = quote(user_data)
-            self.start_param = start_param
-            init_data = (f"user={user_data_encoded}&chat_instance={chat_instance}&chat_type={chat_type}&"
-                         f"start_param={start_param}&auth_date={auth_date}&hash={hash_value}")
-
-            # print(init_data)
             me = await self.tg_client.get_me()
             self.name = me.first_name
             if self.tg_client.is_connected:
                 await self.tg_client.disconnect()
 
-            return init_data
+            return tg_web_data
 
         except InvalidSession as error:
             raise error
@@ -232,6 +289,7 @@ class Tapper:
         except Exception as error:
             logger.error(f"{self.session_name} | Unknown error during Authorization: {error}")
             await asyncio.sleep(delay=3)
+            raise
         finally:
             if self.tg_client.is_connected:
                 await self.tg_client.disconnect()
