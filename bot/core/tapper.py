@@ -409,7 +409,7 @@ class Tapper:
                 await asyncio.sleep(randint(2, 5))
                 continue
 
-            if task_code in {"twitter", "paragraph", "linked"}:
+            if task_code in {"twitter", "paragraph", "linked", "daily"}:
                 success = await self.claim_task(task, session)
                 if success:
                     logger.info(
