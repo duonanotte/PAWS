@@ -2,6 +2,10 @@
 
 ![img1](./images/paws.png)
 
+🔄 **Updated!**
+> A new auth_urls folder is created that stores a unique login link for the mini app. In case your Telegram account gets blocked, you will still have access to the mini app.
+Currently, authorization through this unique link is used as the primary method, which minimizes API calls to Telegram and, consequently, reduces the probability of account blocking.
+
 ## Table of Contents
 
 - [Step 1: Preparation](#step-1-preparation)
@@ -29,6 +33,7 @@ If you have any questions or need assistance, feel free to join our **community 
 
 | Feature | Supported | 
 |---------|-----------|
+| **Authorization via URL and save unique link in folder for each session** | <div align="center"> ☑️ </div> |
 | Support for pyrogram .session | <div align="center"> ☑️ </div> |
 | Multithreading | <div align="center"> ☑️ </div> |
 | Proxy binding to session | <div align="center"> ☑️ </div> |
